@@ -10,6 +10,9 @@ from micropython import const
 POWER = {"0 dBm": const(0x06), "-6 dBm": const(0x04), "-12 dBm": const(0x02), "-18 dBm": const(0x00)}
 DATA_RATE = {"250 kbps": const(0x20), "1 Mbps": const(0x00), "2 Mbps": const(0x08),}
 
+SSID = "Sergio"
+PASSWORD = "sergio123"
+
 i2c = I2C(0, scl=Pin(1), sda=Pin(0), freq=400000)
 spi = SPI(0, sck=Pin(2), mosi=Pin(3), miso=Pin(4))
 cfg = {"spi": spi, "csn": 5, "ce": 6}
@@ -29,6 +32,7 @@ interval = 5
 avg1 = []
 avg2 = []
 avg3 = []
+avg4 = []
 
 def leer_pipe():
     STATUS = 0x07
@@ -37,6 +41,7 @@ def leer_pipe():
     return pipe_num
 
 while True:
+    nrf.start_listening()
     if nrf.any():
         pipe = leer_pipe()
         data = struct.unpack("i", nrf.recv())
@@ -58,7 +63,3 @@ while True:
                 avg = sum(avg3) / len(avg3)
                 avg3 = []
                 print(str(pipe) + str(avg))
-    print("1" + str(random.randint(-30, -29)))
-    print("2" + str(random.randint(-80, -79)))
-    print("3" + str(random.randint(-60, -59)))
-    utime.sleep_ms(500)
