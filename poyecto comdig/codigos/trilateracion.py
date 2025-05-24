@@ -3,140 +3,130 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
-from matplotlib.patches import Circle
 
-# Configuración
-WINDOW_SIZE = 10  # Puntos mostrados en gráficas
-MAX_HISTORY = 500  # Máximo puntos en memoria
-CALIBRATION = {'rssi_0': -45.0, 'n': 2.2}  # Parámetros de calibración
+WINDOW_SIZE = 10  # Número de puntos a mostrar (ajusta según necesidad)
+MAX_HISTORY = 500  # Máximo de puntos a mantener en memoria
 
-# Configuración serial
+# Configuración del puerto serial
 port = 'COM3'
 baudrate = 9600
 
-# Variables globales para RSSI
-rssi_values = [0, 0, 0, 0]
+# Variables globales para almacenar los valores RSSI
+node1 = 0
+node2 = 0
+node3 = 0
+node4 = 0
 
-# Posiciones de los nodos fijos (beacons)
+# Posiciones de los nodos fijos (beacons) en metros
 beacons = [
-    {"x": -1, "y": 1, "name": "Nodo 1"},
-    {"x": 50, "y": 0, "name": "Nodo 2"},
-    {"x": 0, "y": 30, "name": "Nodo 3"},
-    {"x": 50, "y": 30, "name": "Nodo 4"},
+    {"x": 0, "y": 0, "name": "Nodo 1"},
+    {"x": 10, "y": 0, "name": "Nodo 2"},
+    {"x": 0, "y": 10, "name": "Nodo 3"},
+    {"x": 10, "y": 10, "name": "Nodo 4"},
 ]
 
 # Historial de datos
 time_history = []
-rssi_history = [[], [], [], []]  # RSSI por nodo
-distance_history = [[], [], [], []]  # Distancias estimadas
-position_history = {'x': [], 'y': []}  # Posiciones estimadas
+rssi_history = [[], [], [], []]  # Para RSSI de cada nodo
+distance_history = [[], [], [], []]  # Para distancias de cada nodo
+position_history = {'x': [], 'y': []}  # Para posición del nodo móvil
 
-# Configuración de la gráfica
+# Configuración de la gráfica principal
+plt.style.use('default')
 fig = plt.figure(figsize=(15, 10))
 gs = fig.add_gridspec(3, 2)
-ax_main = fig.add_subplot(gs[0:2, 0:2])  # Mapa principal
-ax_rssi = fig.add_subplot(gs[2, 0])     # Gráfica RSSI
-ax_dist = fig.add_subplot(gs[2, 1])     # Gráfica distancias
+ax_main = fig.add_subplot(gs[0:2, 0:2])  # Gráfica principal más grande
+ax_rssi = fig.add_subplot(gs[2, 0])     # Subgráfica RSSI
+ax_dist = fig.add_subplot(gs[2, 1])     # Subgráfica distancias
 
-# Configuración del mapa principal
-ax_main.set_xlim(-5, 55)
-ax_main.set_ylim(-5, 55)
+# Configuración de la gráfica principal
+ax_main.set_xlim(-2, 12)
+ax_main.set_ylim(-2, 12)
 ax_main.set_xlabel('Coordenada X (metros)')
 ax_main.set_ylabel('Coordenada Y (metros)')
 ax_main.set_title('Sistema de Localización en Tiempo Real')
 ax_main.grid(True)
 
-# Dibujar nodos fijos
+# Primero crea los elementos de la gráfica (scatter y lines)
+scatter = ax_main.scatter([], [], color='blue', s=100, label='Nodo Móvil')
+lines = [ax_main.plot([], [], 'k--', alpha=0.5)[0] for _ in beacons]
+
+# Luego dibuja los nodos fijos
 for i, beacon in enumerate(beacons):
-    color = 'red' if i == 0 else 'green'
-    ax_main.scatter(beacon["x"], beacon["y"], color=color, s=100, 
-                   label='Nodos Fijos' if i == 0 else "")
+    if i == 0:
+        ax_main.scatter(beacon["x"], beacon["y"], color='red', s=100, label='Nodos Fijos')
+    else:
+        ax_main.scatter(beacon["x"], beacon["y"], color='red', s=100)
     ax_main.text(beacon["x"] + 0.3, beacon["y"] + 0.3, beacon["name"], fontsize=10)
 
-# Elementos móviles
-scatter = ax_main.scatter([], [], color='blue', s=100, label='Nodo Móvil')
-lines = [ax_main.plot([], [], 'k--', alpha=0.3)[0] for _ in beacons]
-circles = [ax_main.add_patch(Circle((0, 0), 0, fill=False, color='r', alpha=0.2)) 
-           for _ in beacons]
-ax_main.legend(loc='upper left')
+# Finalmente configura la leyenda
+ax_main.legend(loc='upper left', bbox_to_anchor=(0, 1),
+              frameon=True, fancybox=True)
 
-# Configuración gráfica RSSI
+# Configuración de la subgráfica de RSSI
 ax_rssi.set_title('Valores RSSI en Tiempo Real')
 ax_rssi.set_xlabel('Tiempo (iteraciones)')
 ax_rssi.set_ylabel('RSSI (dBm)')
 ax_rssi.grid(True)
 rssi_lines = [ax_rssi.plot([], [], label=f'Nodo {i+1}')[0] for i in range(4)]
-ax_rssi.legend(loc='upper right')
+ax_rssi.legend(loc='upper right', bbox_to_anchor=(1, 1), 
+              ncol=1, frameon=True, fancybox=True)
 
-# Configuración gráfica distancias
-ax_dist.set_title('Distancias Estimadas')
+# Configuración de la subgráfica de distancias
+ax_dist.set_title('Distancias Estimadas en Tiempo Real')
 ax_dist.set_xlabel('Tiempo (iteraciones)')
 ax_dist.set_ylabel('Distancia (metros)')
 ax_dist.grid(True)
 dist_lines = [ax_dist.plot([], [], label=f'Dist a Nodo {i+1}')[0] for i in range(4)]
-ax_dist.legend(loc='upper right')
+ax_dist.legend(loc='upper right', bbox_to_anchor=(1, 1), 
+              ncol=1, frameon=True, fancybox=True)
 
-def rssi_to_distance(rssi, rssi_0=-45.0, n=2.0):
-    """Convierte RSSI a distancia con manejo de errores"""
-    try:
-        distance = 10 ** ((rssi_0 - rssi) / (10 * n))
-        return max(distance, 0.1)  # Distancia mínima de 0.1 metros
-    except:
-        return 1.0  # Valor por defecto si hay error
-
-def weighted_trilateration(rssi_values, beacons, calib):
-    """Trilateración con mínimos cuadrados ponderados"""
-    # Calcular distancias
-    distances = [rssi_to_distance(rssi, calib['rssi_0'], calib['n']) 
-                for rssi in rssi_values]
+def trilaterate(rssi_values, beacons, rssi_0=-60, n=2):
+    """Función de trilateración basada en RSSI"""
+    distances = [10 ** ((rssi_0 - rssi) / (10 * n)) for rssi in rssi_values]
     
-    # Extraer coordenadas de los beacons
-    x = [b["x"] for b in beacons]
-    y = [b["y"] for b in beacons]
+    x1, y1 = beacons[0]["x"], beacons[0]["y"]
+    x2, y2 = beacons[1]["x"], beacons[1]["y"]
+    x3, y3 = beacons[2]["x"], beacons[2]["y"]
+    x4, y4 = beacons[3]["x"], beacons[3]["y"]
     
-    # Construir sistema de ecuaciones
-    A = []
-    b = []
-    for i in range(1, len(beacons)):
-        A.append([2*(x[i] - x[0]), 2*(y[i] - y[0])])
-        b.append(x[i]**2 + y[i]**2 - x[0]**2 - y[0]**2 + 
-                distances[0]**2 - distances[i]**2)
+    d1, d2, d3, d4 = distances
     
-    A = np.array(A)
-    b = np.array(b)
+    A = np.array([
+        [2 * (x2 - x1), 2 * (y2 - y1)],
+        [2 * (x3 - x1), 2 * (y3 - y1)],
+        [2 * (x4 - x1), 2 * (y4 - y1)]
+    ])
     
-    # Ponderación por calidad de señal (inversa al cuadrado de la distancia)
-    weights = [1/(d**2 + 1e-6) for d in distances[1:]]  # +1e-6 para evitar división por cero
-    W = np.diag(weights)
+    b = np.array([
+        x2**2 + y2**2 - x1**2 - y1**2 + d1**2 - d2**2,
+        x3**2 + y3**2 - x1**2 - y1**2 + d1**2 - d3**2,
+        x4**2 + y4**2 - x1**2 - y1**2 + d1**2 - d4**2
+    ])
     
-    try:
-        pos = np.linalg.lstsq(W @ A, W @ b, rcond=None)[0]
-        x_est, y_est = pos[0], pos[1]
-        
-        # Validar que la posición es razonable
-        x_est = np.clip(x_est, -5, 55)
-        y_est = np.clip(y_est, -5, 55)
-        
-        return x_est, y_est, distances
-    except:
-        # Fallback: posición promedio si falla el cálculo
-        avg_x = np.mean([b["x"] for b in beacons])
-        avg_y = np.mean([b["y"] for b in beacons])
-        return avg_x, avg_y, distances
+    x, y = np.linalg.lstsq(A, b, rcond=None)[0]
+    return x, y, distances
 
 def update(frame):
-    """Actualiza la visualización con nuevos datos"""
-    global rssi_values
+    """Función para actualizar la gráfica en tiempo real"""
+    global node1, node2, node3, node4, time_history
     
     try:
         if ser.in_waiting > 0:
             data = ser.readline().decode('utf-8').strip()
-            if len(data) > 0 and data[0] in ['1', '2', '3', '4']:
-                node_idx = int(data[0]) - 1
-                rssi_values[node_idx] = float(data[1:])
+            if len(data) > 0:
+                pipe = data[0]
+                if pipe == '1':
+                    node1 = float(data[1:])
+                elif pipe == '2':
+                    node2 = float(data[1:])
+                elif pipe == '3':
+                    node3 = float(data[1:])
+                elif pipe == '4':
+                    node4 = float(data[1:])
                 
-                # Calcular posición
-                x, y, distances = weighted_trilateration(rssi_values, beacons, CALIBRATION)
+                # Calcular nueva posición y distancias
+                x, y, distances = trilaterate([node1, node2, node3, node4], beacons)
                 
                 # Actualizar historiales
                 time_history.append(frame)
@@ -144,11 +134,11 @@ def update(frame):
                 position_history['y'].append(y)
                 
                 for i in range(4):
-                    rssi_history[i].append(rssi_values[i])
+                    rssi_history[i].append([node1, node2, node3, node4][i])
                     distance_history[i].append(distances[i])
                 
-                # Limitar tamaño de historiales
-                if len(time_history) > MAX_HISTORY:
+                # Limitar el tamaño de los historiales
+                if len(time_history) > WINDOW_SIZE:
                     time_history.pop(0)
                     position_history['x'].pop(0)
                     position_history['y'].pop(0)
@@ -156,54 +146,53 @@ def update(frame):
                         rssi_history[i].pop(0)
                         distance_history[i].pop(0)
                 
-                # Actualizar visualización principal
+                # Actualizar gráfica principal
                 scatter.set_offsets(np.c_[x, y])
-                
-                # Líneas de conexión y círculos de error
-                for i, (line, circle) in enumerate(zip(lines, circles)):
+                for i, line in enumerate(lines):
                     line.set_data([beacons[i]["x"], x], [beacons[i]["y"], y])
-                    circle.center = (beacons[i]["x"], beacons[i]["y"])
-                    circle.radius = distances[i]
                 
-                # Actualizar subgráficas (últimos WINDOW_SIZE puntos)
+                # Obtener solo los últimos WINDOW_SIZE puntos
                 recent_time = time_history[-WINDOW_SIZE:]
+                recent_rssi = [history[-WINDOW_SIZE:] for history in rssi_history]
+                recent_dist = [history[-WINDOW_SIZE:] for history in distance_history]
                 
-                # Gráfica RSSI
+                # Actualizar subgráfica de RSSI
                 for i, line in enumerate(rssi_lines):
-                    line.set_data(recent_time, rssi_history[i][-WINDOW_SIZE:])
+                    line.set_data(recent_time, recent_rssi[i])
                 ax_rssi.relim()
                 ax_rssi.set_xlim(min(recent_time), max(recent_time))
-                ax_rssi.autoscale_view(scaley=True)
+                ax_rssi.autoscale_view(scaley=True)  # Modificación aquí
                 
-                # Gráfica distancias
+                # Actualizar subgráfica de distancias
                 for i, line in enumerate(dist_lines):
-                    line.set_data(recent_time, distance_history[i][-WINDOW_SIZE:])
+                    line.set_data(recent_time, recent_dist[i])
                 ax_dist.relim()
                 ax_dist.set_xlim(min(recent_time), max(recent_time))
-                ax_dist.autoscale_view(scaley=True)
+                ax_dist.autoscale_view(scaley=True)  # Modificación aquí
                 
-                print(f"Posición: ({x:.2f}, {y:.2f}) m | RSSI: {rssi_values} | Distancias: {[f'{d:.2f}' for d in distances]}")
+                print(f"Posición: ({x:.2f}, {y:.2f}) m | RSSI: {node1:.1f}, {node2:.1f}, {node3:.1f}, {node4:.1f} dBm")
     
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error en la lectura: {e}")
     
-    return [scatter] + lines + circles + rssi_lines + dist_lines
+    return [scatter] + lines + rssi_lines + dist_lines
 
-# Inicialización
 try:
+    # Iniciar conexión serial
     ser = serial.Serial(port, baudrate, timeout=1)
-    print(f"Conexión establecida en {port}. Iniciando...")
+    print(f"Conexión exitosa a {port}. Iniciando visualización...")
     
+    # Configurar animación
     ani = FuncAnimation(fig, update, interval=100, blit=False, cache_frame_data=False)
     plt.tight_layout()
     plt.show()
 
 except serial.SerialException as e:
     print(f"Error al abrir {port}: {e}")
-    print("Sugerencias:")
-    print("1. Verifica el puerto COM correcto")
-    print("2. Asegúrate que el dispositivo está conectado")
-    print("3. Prueba reiniciando el IDE/consola")
+    print("Posibles soluciones:")
+    print("- Verifica que el puerto sea correcto")
+    print("- Asegúrate que no hay otros programas usando el puerto")
+    print("- Prueba ejecutando como administrador")
 
 except KeyboardInterrupt:
     print("\nCerrando programa...")
