@@ -49,4 +49,3 @@ while True:
         nrf.send(struct.pack("fff", round(current_data['gyro']['x'], 2), round(current_data['gyro']['y'], 2), round(current_data['gyro']['z'], 2)))
     except OSError as e:
         pass
-
