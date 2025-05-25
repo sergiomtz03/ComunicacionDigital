@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from collections import deque
+import math
 
 # Configuración de visualización
 WINDOW_SIZE = 20  # Muestra últimos 60 puntos (~6 segundos con interval=100)
@@ -28,6 +29,7 @@ beacons = [
     {"x": 25, "y": 4, "name": "Nodo 3"}  # Altura triángulo equilátero: √3/2 * lado
 ]
 
+freq_mhz = 2400
 # Historial de datos
 time_history = deque(maxlen=MAX_HISTORY)
 rssi_history = [deque(maxlen=MAX_HISTORY) for _ in range(3)]
@@ -98,37 +100,36 @@ ax_dist.grid(True)
 dist_lines = [ax_dist.plot([], [], label=f'Dist a Nodo {i+1}')[0] for i in range(3)]
 ax_dist.legend(loc='upper right', bbox_to_anchor=(1, 1), ncol=1, frameon=True)
 
-def rssi_to_distance(rssi, rssi_0=-35, n=1.8):
-    """Modelo de propagación en espacio libre (log-distance path loss)"""
-    # Fórmula: d = 10^((rssi_0 - rssi)/(10*n))
-    return 10 ** ((rssi_0 - rssi) / (10 * n))
+def fspl_to_distance(rssi, tx_power=0):
+    """
+    Convierte RSSI a distancia usando el modelo FSPL
+    """
+    d = 10 ** ((-6 + tx_power-rssi+27.56-20*math.log10(freq_mhz))/20)
+    return d
 
-def trilaterate(rssi_values, beacons, rssi_0=-35, n=1.8):
-    """Función de trilateración con 3 nodos usando mínimos cuadrados"""
-    # Convertir RSSI a distancias
-    distances = [rssi_to_distance(rssi, rssi_0, n) for rssi in rssi_values]
+def trilaterate(rssi_values, beacons, tx_power=0):
+    """
+    Trilateración usando las ecuaciones del diagrama
+    rssi_values: [RSSI_P1, RSSI_P2, RSSI_P3]
+    beacons: Lista con las posiciones de los nodos
+    """
+    # Obtener distancias usando FSPL
+    r1 = fspl_to_distance(rssi_values[0], tx_power)
+    r2 = fspl_to_distance(rssi_values[1], tx_power)
+    r3 = fspl_to_distance(rssi_values[2], tx_power)
+    # Parámetros geométricos
+    d = math.sqrt((beacons[1]["x"] - beacons[0]["x"])**2 + 
+                 (beacons[1]["y"] - beacons[0]["y"])**2)
+    i = beacons[2]["x"]
+    j = beacons[2]["y"]
     
-    # Coordenadas de los beacons
-    x1, y1 = beacons[0]["x"], beacons[0]["y"]
-    x2, y2 = beacons[1]["x"], beacons[1]["y"]
-    x3, y3 = beacons[2]["x"], beacons[2]["y"]
-    
-    d1, d2, d3 = distances
-    
-    # Matriz A y vector b para el sistema de ecuaciones
-    A = np.array([
-        [2 * (x2 - x1), 2 * (y2 - y1)],
-        [2 * (x3 - x1), 2 * (y3 - y1)]
-    ])
-    
-    b = np.array([
-        x2**2 + y2**2 - x1**2 - y1**2 + d1**2 - d2**2,
-        x3**2 + y3**2 - x1**2 - y1**2 + d1**2 - d3**2
-    ])
-    
-    # Resolver el sistema usando mínimos cuadrados
-    x, y = np.linalg.lstsq(A, b, rcond=None)[0]
-    return x, y, distances
+    # Calcular posición (X,Y) según las ecuaciones
+    X = (r1**2 - r2**2 + d**2) / (2 * d)
+    Y_numerator = r1**2 - r3**2 - X**2 + (X - i)**2 + j**2
+    Y = Y_numerator / (2 * j)
+    print(r1, r2, r3)
+    print(X,Y)
+    return X, Y, [r1, r2, r3]
 
 def update(frame):
     global node1, node2, node3, gyro_x, gyro_y, gyro_z
@@ -213,8 +214,8 @@ def update(frame):
                         ax_rssi_node1.set_xlim(min(recent_time), max(recent_time))
                         ax_rssi_node1.autoscale_view(scaley=True)
                         
-                        print(f"Posición: ({x:.2f}, {y:.2f}) m | RSSI: {node1:.1f}, {node2:.1f}, {node3:.1f} dBm")
-                        print(f"Giroscopio: X={gyro_x:.2f}°/s, Y={gyro_y:.2f}°/s, Z={gyro_z:.2f}°/s")
+#                         print(f"Posición: ({x:.2f}, {y:.2f}) m | RSSI: {node1:.1f}, {node2:.1f}, {node3:.1f} dBm")
+#                         print(f"Giroscopio: X={gyro_x:.2f}°/s, Y={gyro_y:.2f}°/s, Z={gyro_z:.2f}°/s")
     
     except Exception as e:
         print(f"Error en la lectura: {e}")
