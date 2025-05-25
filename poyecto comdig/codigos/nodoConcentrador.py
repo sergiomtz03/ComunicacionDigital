@@ -68,4 +68,8 @@ while True:
                 print(str(pipe) + str(avg))
         if pipe == 4:
             gyro_x, gyro_y, gyro_z= struct.unpack('fff', nrf.recv())
-            print(pipe, gyro_x, gyro_y, gyro_z)
+        print(pipe, gyro_x, gyro_y, gyro_z)
+        print("1" + str(-45))
+        print("2" + str(-75))
+        print("3" + str(-80))
+        utime.sleep_ms(500)
