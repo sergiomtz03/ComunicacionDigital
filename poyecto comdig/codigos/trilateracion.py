@@ -118,19 +118,27 @@ def trilaterate(rssi_values, beacons, tx_power=0):
     r2 = fspl_to_distance(rssi_values[1], tx_power)
     r3 = fspl_to_distance(rssi_values[2], tx_power)
     # Parámetros geométricos
-    d = math.sqrt((beacons[1]["x"] - beacons[0]["x"])**2 + 
-                 (beacons[1]["y"] - beacons[0]["y"])**2)
-    i = beacons[2]["x"]
-    j = beacons[2]["y"]
+    x1, y1 = beacons[0]["x"], beacons[0]["y"]
+    x2, y2 = beacons[1]["x"], beacons[1]["y"]
+    x3, y3 = beacons[2]["x"], beacons[2]["y"]
     
-    # Calcular posición (X,Y) según las ecuaciones
-    X = (r1**2 - r2**2 + d**2) / (2 * d)
-    Y_numerator = r1**2 - r3**2 - X**2 + (X - i)**2 + j**2
-    Y = Y_numerator / (2 * j)
-    print(r1, r2, r3)
-    print(X,Y)
-    return X, Y, [r1, r2, r3]
+    A = 2*(x2 - x1) 
+    B = 2*(y2 - y1)
+    C = r1**2 - r2**2 - x1**2 + x2**2 - y1**2 + y2**2
 
+    D = 2*(x3 - x1)
+    E = 2*(y3 - y1)
+    F = r1**2 - r3**2 - x1**2 + x3**2 - y1**2 + y3**2
+
+    # Resolver sistema lineal: A*x + B*y = C y D*x + E*y = F
+    M = np.array([[A, B], [D, E]])
+    N = np.array([C, F])
+    try:
+        X, Y = np.linalg.solve(M, N)
+        print(X,Y)
+        return X, Y, [r1, r2, r3]
+    except np.linalg.LinAlgError:
+        return None
 def update(frame):
     global node1, node2, node3, gyro_x, gyro_y, gyro_z
     
