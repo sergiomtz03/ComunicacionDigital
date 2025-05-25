@@ -5,55 +5,61 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
 # Configuración de visualización
-WINDOW_SIZE = 25  # Muestra últimos 60 puntos (~6 segundos con interval=100)
-MAX_HISTORY = 300  # Máximo de puntos en memoria
+WINDOW_SIZE = 10
+MAX_HISTORY = 100
 
 # Configuración del puerto serial
 port = 'COM8'
 baudrate = 9600
 
-# Variables globales para almacenar los valores RSSI
-node1 = 0
-node2 = 0
-node3 = 0
-gyro_x = 0
-gyro_y = 0
-gyro_z = 0
+# Variables globales
+node1, node2, node3 = 0, 0, 0
+gyro_x, gyro_y, gyro_z = 0, 0, 0
 
-# Posiciones de los 3 nodos fijos (beacons) en metros - Triángulo equilátero recomendado
+# Posiciones de los nodos
 beacons = [
     {"x": 0, "y": 0, "name": "Nodo 1"},
     {"x": 10, "y": 0, "name": "Nodo 2"},
-    {"x": 5, "y": 8.66, "name": "Nodo 3"}  # Altura triángulo equilátero: √3/2 * lado
+    {"x": 5, "y": 8.66, "name": "Nodo 3"}
 ]
 
 # Historial de datos
 time_history = []
-rssi_history = [[], [], []]  # Para RSSI de cada nodo
-distance_history = [[], [], []]  # Para distancias de cada nodo
-position_history = {'x': [], 'y': []}  # Para posición del nodo móvil
+rssi_history = [[], [], []]
+distance_history = [[], [], []]
+gyro_history = [[], [], []]  # Para datos del giroscopio (X, Y, Z)
+position_history = {'x': [], 'y': []}
 
-# Configuración de la gráfica principal
+# Configuración de la gráfica principal (ahora con 3 filas)
 plt.style.use('default')
-fig = plt.figure(figsize=(15, 10))
-gs = fig.add_gridspec(3, 2)
-ax_main = fig.add_subplot(gs[0:2, 0:2])  # Gráfica principal
-ax_rssi = fig.add_subplot(gs[2, 0])     # Subgráfica RSSI
-ax_dist = fig.add_subplot(gs[2, 1])     # Subgráfica distancias
+fig = plt.figure(figsize=(15, 12))  # Aumenté el tamaño para acomodar la nueva gráfica
+gs = fig.add_gridspec(4, 2)  # 4 filas en lugar de 3
 
-# Configuración de la gráfica principal
+# Gráfica principal (ocupa las primeras 2 filas)
+ax_main = fig.add_subplot(gs[0:2, 0:2])
 ax_main.set_xlim(-2, 12)
 ax_main.set_ylim(-2, 12)
 ax_main.set_xlabel('Coordenada X (metros)')
 ax_main.set_ylabel('Coordenada Y (metros)')
-ax_main.set_title('Sistema de Localización con 3 Nodos (Espacio Libre)')
+ax_main.set_title('Sistema de Localización con 3 Nodos')
 ax_main.grid(True)
+
+# Subgráficas (tercera fila)
+ax_rssi = fig.add_subplot(gs[2, 0])
+ax_dist = fig.add_subplot(gs[2, 1])
+
+# Nueva subgráfica para el giroscopio (cuarta fila, ocupa ambas columnas)
+ax_gyro = fig.add_subplot(gs[3, :])
+ax_gyro.set_title('Datos del Giroscopio en Tiempo Real')
+ax_gyro.set_xlabel('Tiempo (iteraciones)')
+ax_gyro.set_ylabel('Velocidad angular (°/s)')
+ax_gyro.grid(True)
 
 # Elementos gráficos
 scatter = ax_main.scatter([], [], color='blue', s=100, label='Nodo Móvil')
 lines = [ax_main.plot([], [], 'k--', alpha=0.5)[0] for _ in beacons]
 
-# Dibujar nodos fijos (solo una etiqueta en la leyenda)
+# Dibujar nodos fijos
 for i, beacon in enumerate(beacons):
     if i == 0:
         ax_main.scatter(beacon["x"], beacon["y"], color='red', s=100, label='Nodos Fijos')
@@ -61,7 +67,6 @@ for i, beacon in enumerate(beacons):
         ax_main.scatter(beacon["x"], beacon["y"], color='red', s=100)
     ax_main.text(beacon["x"] + 0.3, beacon["y"] + 0.3, beacon["name"], fontsize=10)
 
-# Configurar leyenda principal
 ax_main.legend(loc='upper left', bbox_to_anchor=(0, 1), frameon=True, fancybox=True)
 
 # Configuración de subgráficas
@@ -79,9 +84,12 @@ ax_dist.grid(True)
 dist_lines = [ax_dist.plot([], [], label=f'Dist a Nodo {i+1}')[0] for i in range(3)]
 ax_dist.legend(loc='upper right', bbox_to_anchor=(1, 1), ncol=1, frameon=True)
 
+# Líneas para el giroscopio (X, Y, Z)
+gyro_lines = [ax_gyro.plot([], [], label=f'Eje {axis}')[0] for axis in ['X', 'Y', 'Z']]
+ax_gyro.legend(loc='upper right', bbox_to_anchor=(1, 1), ncol=1, frameon=True)
+
+# Funciones de trilateración (igual que antes)
 def rssi_to_distance(rssi, rssi_0=-60, n=2):
-    """Modelo de propagación en espacio libre (log-distance path loss)"""
-    # Fórmula: d = 10^((rssi_0 - rssi)/(10*n))
     return 10 ** ((rssi_0 - rssi) / (10 * n))
 
 def trilaterate(rssi_values, beacons, rssi_0=-60, n=2):
@@ -94,7 +102,8 @@ def trilaterate(rssi_values, beacons, rssi_0=-60, n=2):
     x2, y2 = beacons[1]["x"], beacons[1]["y"]
     x3, y3 = beacons[2]["x"], beacons[2]["y"]
     
-    d1, d2, d3 = distances
+    # Asignar distancias a variables con nombres más claros
+    d1, d2, d3 = distances  # Esta es la línea clave que faltaba
     
     # Matriz A y vector b para el sistema de ecuaciones
     A = np.array([
@@ -112,7 +121,6 @@ def trilaterate(rssi_values, beacons, rssi_0=-60, n=2):
     return x, y, distances
 
 def update(frame):
-    """Función para actualizar la gráfica en tiempo real"""
     global node1, node2, node3, gyro_x, gyro_y, gyro_z, time_history
     
     try:
@@ -129,11 +137,15 @@ def update(frame):
                 elif pipe == '4':
                     parts = data.split()
                     if len(parts) >= 4:
-                        gyro_x = float(parts[1])  # Primer valor después del identificador
+                        gyro_x = float(parts[1])
                         gyro_y = float(parts[2])
                         gyro_z = float(parts[3])
+                        # Almacenar datos del giroscopio
+                        gyro_history[0].append(gyro_x)
+                        gyro_history[1].append(gyro_y)
+                        gyro_history[2].append(gyro_z)
                 
-                # Calcular posición con 3 nodos
+                # Calcular posición
                 x, y, distances = trilaterate([node1, node2, node3], beacons)
                 
                 # Actualizar historiales
@@ -145,7 +157,7 @@ def update(frame):
                     rssi_history[i].append([node1, node2, node3][i])
                     distance_history[i].append(distances[i])
                 
-                # Limitar tamaño de historiales
+                # Limitar historiales
                 if len(time_history) > MAX_HISTORY:
                     time_history.pop(0)
                     position_history['x'].pop(0)
@@ -153,44 +165,49 @@ def update(frame):
                     for i in range(3):
                         rssi_history[i].pop(0)
                         distance_history[i].pop(0)
+                        gyro_history[i].pop(0)
                 
-                # Actualizar gráfica principal
+                # Actualizar todas las gráficas
                 scatter.set_offsets(np.c_[x, y])
                 for i, line in enumerate(lines):
                     line.set_data([beacons[i]["x"], x], [beacons[i]["y"], y])
                 
                 # Mostrar últimos WINDOW_SIZE puntos
                 recent_time = time_history[-WINDOW_SIZE:]
-                recent_rssi = [history[-WINDOW_SIZE:] for history in rssi_history]
-                recent_dist = [history[-WINDOW_SIZE:] for history in distance_history]
                 
                 # Actualizar subgráfica de RSSI
                 for i, line in enumerate(rssi_lines):
-                    line.set_data(recent_time, recent_rssi[i])
+                    line.set_data(recent_time, rssi_history[i][-WINDOW_SIZE:])
                 ax_rssi.relim()
                 ax_rssi.set_xlim(min(recent_time), max(recent_time))
                 ax_rssi.autoscale_view(scaley=True)
                 
                 # Actualizar subgráfica de distancias
                 for i, line in enumerate(dist_lines):
-                    line.set_data(recent_time, recent_dist[i])
+                    line.set_data(recent_time, distance_history[i][-WINDOW_SIZE:])
                 ax_dist.relim()
                 ax_dist.set_xlim(min(recent_time), max(recent_time))
                 ax_dist.autoscale_view(scaley=True)
                 
-                print(f"Posición: ({x:.2f}, {y:.2f}) m | RSSI: {node1:.1f}, {node2:.1f}, {node3:.1f} dBm | Distancias: {distances[0]:.2f}, {distances[1]:.2f}, {distances[2]:.2f} m")
+                # Actualizar subgráfica del giroscopio
+                for i, line in enumerate(gyro_lines):
+                    line.set_data(recent_time, gyro_history[i][-WINDOW_SIZE:])
+                ax_gyro.relim()
+                ax_gyro.set_xlim(min(recent_time), max(recent_time))
+                ax_gyro.autoscale_view(scaley=True)
+                
+                print(f"Posición: ({x:.2f}, {y:.2f}) m | RSSI: {node1:.1f}, {node2:.1f}, {node3:.1f} dBm")
+                print(f"Giroscopio: X={gyro_x:.2f}°/s, Y={gyro_y:.2f}°/s, Z={gyro_z:.2f}°/s")
     
     except Exception as e:
         print(f"Error en la lectura: {e}")
     
-    return [scatter] + lines + rssi_lines + dist_lines
+    return [scatter] + lines + rssi_lines + dist_lines + gyro_lines
 
 try:
-    # Iniciar conexión serial
     ser = serial.Serial(port, baudrate, timeout=1)
     print(f"Conexión exitosa a {port}. Iniciando visualización...")
     
-    # Configurar animación
     ani = FuncAnimation(fig, update, interval=100, blit=False, cache_frame_data=False)
     plt.tight_layout()
     plt.show()
