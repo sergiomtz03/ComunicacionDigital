@@ -21,12 +21,13 @@ csn = Pin(cfg["csn"], mode=Pin.OUT, value=1)
 ce = Pin(cfg["ce"], mode=Pin.OUT, value=0)
 spi = cfg["spi"]
 
-nrf = NRF24L01(spi, csn, ce, channel = 100, payload_size=8)
+nrf = NRF24L01(spi, csn, ce, channel = 100, payload_size=16)
 nrf.set_power_speed(POWER["-12 dBm"], DATA_RATE["2 Mbps"])
 
 nrf.open_rx_pipe(1, b'1Node')
 nrf.open_rx_pipe(2, b'2Node')
 nrf.open_rx_pipe(3, b'3Node')
+nrf.open_rx_pipe(4, b'4Node')
 
 interval = 5
 avg1 = []
@@ -44,22 +45,27 @@ while True:
     nrf.start_listening()
     if nrf.any():
         pipe = leer_pipe()
-        data = struct.unpack("i", nrf.recv())
         if pipe == 1:
+            data = struct.unpack("i", nrf.recv())
             avg1.append(data[0])
             if(len(avg1) == interval):
                 avg = sum(avg1) / len(avg1)
                 avg1 = []
                 print(str(pipe) + str(avg))
         if pipe == 2:
+            data = struct.unpack("i", nrf.recv())
             avg2.append(data[0])
             if(len(avg2) == interval):
                 avg = sum(avg2) / len(avg2)
                 avg2 = []
                 print(str(pipe) + str(avg))
         if pipe == 3:
+            data = struct.unpack("i", nrf.recv())
             avg3.append(data[0])
             if(len(avg3) == interval):
                 avg = sum(avg3) / len(avg3)
                 avg3 = []
                 print(str(pipe) + str(avg))
+        if pipe == 4:
+            gyro_x, gyro_y, gyro_z= struct.unpack('fff', nrf.recv())
+            print(pipe, gyro_x, gyro_y, gyro_z)
